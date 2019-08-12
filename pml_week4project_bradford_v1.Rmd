@@ -1,0 +1,159 @@
+---
+title: 'Peer-graded Assignment: Practical Machine Learning'
+author: "David Bradford"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+
+<p><b>David Bradford - August 2019</b></p>
+<p><i>For questions/comments email me @ motomojo749@yahoo.com</i></p>
+
+The data for this project came from the following source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+  Training - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+  
+  Test - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r, message=FALSE}
+library(caret)
+library(rpart)
+library(gbm)
+library(dplyr)
+library(randomForest)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+Set the seed to guarantee reproducibility of my findings:
+
+```{r}
+set.seed(1000)
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+The goal of this project is to predict the manner in which the six participants of this study, wearing accelerometers on the belt, forearm, arm, and dumbell did the exercise. This is the "classe" variable in the training set.
+
+The outcome variable is classe, which has five levels:
+
+<li>A - lifting exactly according to the specification</li>
+<li>B - throwing the elbows to the front</li>
+<li>C - lifting the dumbbell halfway</li>
+<li>D - lowering the dumbbell halfway</li>
+<li>E - throwing the hips forward</li>
+
+### Cross-validate, Build, and Validate the Models
+
+1.  Download and import data.
+
+```{r, message=FALSE}
+url_train="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(url_train,destfile="pml_train.csv")
+download.file(url_test,destfile="pml_test.csv")
+
+library(readr)
+training <- read.csv("pml_train.csv",na.strings = c("NA", "#DIV/0!", ""))
+testing <- read.csv("pml_test.csv",na.strings = c("NA", "#DIV/0!", ""))
+```
+
+2.  Create Training (70%) and Testing (30%) data sets.  Then tidy and explore the data.
+
+```{r}
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+subTraining <- training[inTrain, ]
+subTesting <- training[-inTrain, ]
+```
+
+- Remove the first seven columns from the data set since they aren't relevant to our analysis:
+
+```{r}
+subTraining <- subTraining[, -c(1:7)]
+```
+
+- Remove NA columns
+
+```{r}
+subTraining_tidy <- subTraining
+
+for (i in 1:length(subTraining))
+  {
+    if(sum(is.na(subTraining[, i]))/ nrow(subTraining) >= .5) 
+      {
+        for (j in 1:length(subTraining_tidy))
+          {
+            if(length(grep(names(subTraining[i]), names(subTraining_tidy)[j])) == 1)
+              {
+                subTraining_tidy <- subTraining_tidy[, -j]
+              }
+          }
+      }
+  }
+
+subTraining <- subTraining_tidy
+```
+
+- Tidy the testing data set
+
+```{r}
+tidya <- colnames(subTraining)
+subTesting <- subTesting[tidya]
+
+tidyb <- colnames(subTraining[, -53])
+testing <- testing[tidyb]
+```
+
+3.  Create evaluation models based on the training/testing data sets:  RandomForest & Decision Tree
+
+- Create the RandomForest model and build the confusion matrix
+
+```{r}
+
+fit_rf <- randomForest(classe ~., data = subTraining)
+
+
+pred_rf <- predict(fit_rf, subTesting)
+
+
+cm_rf <- confusionMatrix(pred_rf, subTesting$classe)
+print(cm_rf)
+```
+
+- Based on the analysis, I am 95% confident that the accuracy of the RandomForest model falls between 0.9921 and 0.9961.  The calculated accuracy is 0.9944 which means the expected out of sample error is 0.0056.  Plotting the errors for all the trees evaluated:
+
+```{r}
+plot(fit_rf)
+```
+
+- Create the Decision Tree model and build the confusion matrix.
+
+```{r}
+fit_dt <- rpart(classe ~., data = subTraining)
+
+
+pred_dt <- predict(fit_dt, subTesting, type = "class")
+
+
+cm_dt <- confusionMatrix(pred_dt, subTesting$classe)
+print(cm_dt)
+```
+
+- Based on the analysis, I am 95% confident that the accuracy of the Decision Tree model falls between 0.7543 and 0.7761.  The calculated accuracy is 0.7653 which means the expected out of sample error is 0.2347
+
+Given this result, I will use the RandomForest model to predict the outcome of the testing data set due to the higher accuracy.  Predictions for the 20 different test cases in the data set are:
+
+```{r}
+finalPred <- predict(fit_rf, testing)
+print(finalPred)
+```
+
+4. Summary
+
+In this analysis I cross-validated the training set by splitting it into training/test sets.  I then built models on the training set and evaluated using the test set.  I selected the Random Forest and Decision Tree methods since they are best suited for this data.  The Random Forest model, having the highest accuracy rate, is the model I used against the provided test set.
